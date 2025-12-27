@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "ir-experiment"
+version = "0.1.0"
+description = "Comparative experiment of retrieval methods based on the Cranfield paradigm"
+authors = ["Student milos.hampl@hotmail.cz"]
+readme = "README.md"
+packages = [{include = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+ir-datasets = "^0.5.5"
+ir-measures = "^0.3.3"
+sentence-transformers = "^2.2.2"
+rank-bm25 = "^0.2.2"
+numpy = "^1.26.0"
+pandas = "^2.1.0"
+tqdm = "^4.66.0"
+torch = "^2.0.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
