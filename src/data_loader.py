@@ -13,10 +13,6 @@ class DataLoader:
         logger.info(f"Initialized DataLoader for {dataset_name}")
 
     def load_corpus(self) -> pd.DataFrame:
-        """
-        Loads the corpus (documents).
-        Returns a DataFrame with columns ['doc_id', 'text', 'title'].
-        """
         logger.info("Loading corpus...")
         docs_iter = self.dataset.docs_iter()
         
@@ -33,10 +29,6 @@ class DataLoader:
         return df
 
     def load_queries(self) -> pd.DataFrame:
-        """
-        Loads the queries (topics).
-        Returns a DataFrame with columns ['query_id', 'text'].
-        """
         logger.info("Loading queries...")
         queries_iter = self.dataset.queries_iter()
         
@@ -52,10 +44,6 @@ class DataLoader:
         return df
 
     def load_qrels(self) -> pd.DataFrame:
-        """
-        Loads the qrels (relevance judgments).
-        Returns a DataFrame with columns ['query_id', 'doc_id', 'relevance', 'iteration'].
-        """
         logger.info("Loading qrels...")
         qrels_iter = self.dataset.qrels_iter()
         

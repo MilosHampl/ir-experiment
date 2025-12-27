@@ -4,24 +4,18 @@ import pickle
 import numpy as np
 import pandas as pd
 import torch
-from typing import Dict, List, Optional, Literal, Tuple
-from tqdm import tqdm
-from sentence_transformers import SentenceTransformer, util
+from typing import Dict
+from sentence_transformers import SentenceTransformer
+import hnswlib
 from config import (
-    EMBEDDING_MODEL_NAME, EMBEDDINGS_PATH, DOC_IDS_PATH,
-    DENSE_BATCH_SIZE
+    EMBEDDING_MODEL_NAME, EMBEDDINGS_PATH, DOC_IDS_PATH, HNSW_INDEX_PATH,
+    DENSE_BATCH_SIZE, HNSW_M, HNSW_EF_CONSTRUCTION, HNSW_SPACE
 )
 
 logger = logging.getLogger(__name__)
 
 class DenseRetriever:
     def __init__(self, corpus: pd.DataFrame):
-        """
-        Initialize DenseRetriever.
-        
-        Args:
-            corpus: DataFrame containing 'doc_id', 'text', 'title'.
-        """
         self.corpus = corpus
         self.doc_ids = corpus['doc_id'].tolist()
         
@@ -36,11 +30,9 @@ class DenseRetriever:
         
         self.embeddings = self._load_or_generate_embeddings()
         self.dimension = self.embeddings.shape[1]
+        self.build_indices()
 
     def _load_or_generate_embeddings(self) -> np.ndarray:
-        """
-        Loads embeddings from disk or generates them if not found.
-        """
         if os.path.exists(EMBEDDINGS_PATH) and os.path.exists(DOC_IDS_PATH):
             logger.info("Loading embeddings from cache...")
             embeddings = np.load(EMBEDDINGS_PATH)
@@ -60,45 +52,48 @@ class DenseRetriever:
             batch_size=DENSE_BATCH_SIZE,
             show_progress_bar=True,
             convert_to_numpy=True,
-            normalize_embeddings=True
+            normalize_embeddings=True,
+            device=self.model.device
         )
         
-        # Save to cache
         np.save(EMBEDDINGS_PATH, embeddings)
         with open(DOC_IDS_PATH, 'wb') as f:
             pickle.dump(self.doc_ids, f)
             
         return embeddings
 
+    def build_indices(self):
+        self.hnsw_index = hnswlib.Index(space=HNSW_SPACE, dim=self.dimension)
 
-    def search(self, query: str, top_k: int = 1000) -> List[Tuple[str, float]]:
-        """
-        Search using Exact Search (Dot Product) via SentenceTransformers util.
-        Annoy was found to be unreliable in this environment.
-        
-        Args:
-            query: Query string.
-            top_k: Number of results.
+        if os.path.exists(HNSW_INDEX_PATH):
+            logger.info("Loading HNSW index from cache...")
+            try:
+                self.hnsw_index.load_index(str(HNSW_INDEX_PATH))
+                logger.info("HNSW index loaded.")
+                return
+            except Exception as e:
+                logger.error(f"Failed to load HNSW index: {e}")
+
+        logger.info("Building HNSW index...")
+        self.hnsw_index.init_index(max_elements=len(self.embeddings), ef_construction=HNSW_EF_CONSTRUCTION, M=HNSW_M)
+        self.hnsw_index.add_items(self.embeddings, np.arange(len(self.embeddings)))
             
-        Returns:
-            List of tuples (doc_id, score).
-        """
-        query_embedding = self.model.encode(query, convert_to_tensor=True, normalize_embeddings=True, show_progress_bar=False)
-        
-        # Convert corpus embeddings to tensor if they are numpy
-        if isinstance(self.embeddings, np.ndarray):
-            corpus_embeddings = torch.from_numpy(self.embeddings).to(query_embedding.device)
-        else:
-            corpus_embeddings = self.embeddings
+        logger.info("HNSW index built. Saving to cache...")
+        try:
+            self.hnsw_index.save_index(str(HNSW_INDEX_PATH))
+            logger.info("HNSW index saved.")
+        except Exception as e:
+            logger.error(f"Failed to save HNSW index: {e}")
 
-        # Perform semantic search
-        # returns list of list of dicts: [[{'corpus_id': int, 'score': float}, ...]]
-        hits = util.semantic_search(query_embedding, corpus_embeddings, top_k=top_k)[0]
+    def search(self, query: str, top_k: int = 1000) -> Dict[str, float]:
+        query_embedding = self.model.encode(query, convert_to_tensor=False, normalize_embeddings=True, show_progress_bar=False)
+        labels, distances = self.hnsw_index.knn_query(query_embedding, k=top_k)
         
-        results = []
-        for hit in hits:
-            doc_id = self.doc_ids[hit['corpus_id']]
-            results.append((doc_id, float(hit['score'])))
+        results = {}
+        for label, distance in zip(labels[0], distances[0]):
+            doc_id = self.doc_ids[label]
+            score = 1 - distance
+            results[doc_id] = float(score)
             
         return results
 
