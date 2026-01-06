@@ -1,10 +1,11 @@
 import logging
 import os
 import pickle
+import time
 import numpy as np
 import pandas as pd
 import torch
-from typing import Dict
+from typing import Dict, List
 from sentence_transformers import SentenceTransformer
 import hnswlib
 from config import (
@@ -18,6 +19,8 @@ class DenseRetriever:
     def __init__(self, corpus: pd.DataFrame):
         self.corpus = corpus
         self.doc_ids = corpus['doc_id'].tolist()
+        
+        self.query_latencies: List[float] = []
         
         device = "cpu"
         if torch.cuda.is_available():
@@ -40,6 +43,7 @@ class DenseRetriever:
                 cached_doc_ids = pickle.load(f)
             
             if cached_doc_ids == self.doc_ids:
+                logger.info("Embeddings loaded from cache.")
                 return embeddings
             else:
                 logger.warning("Cached doc_ids do not match current corpus. Regenerating...")
@@ -86,6 +90,8 @@ class DenseRetriever:
             logger.error(f"Failed to save HNSW index: {e}")
 
     def search(self, query: str, top_k: int = 1000) -> Dict[str, float]:
+        start_time = time.time()
+        
         query_embedding = self.model.encode(query, convert_to_tensor=False, normalize_embeddings=True, show_progress_bar=False)
         labels, distances = self.hnsw_index.knn_query(query_embedding, k=top_k)
         
@@ -94,6 +100,14 @@ class DenseRetriever:
             doc_id = self.doc_ids[label]
             score = 1 - distance
             results[doc_id] = float(score)
+        
+        latency = time.time() - start_time
+        self.query_latencies.append(latency)
             
         return results
+    
+    def get_avg_query_latency(self) -> float:
+        if not self.query_latencies:
+            return 0.0
+        return sum(self.query_latencies) / len(self.query_latencies)
 

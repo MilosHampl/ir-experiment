@@ -44,4 +44,5 @@ venv.bak/
 cache/
 experiment_results.csv
 significance_results.csv
+query_latency_results.csv
 

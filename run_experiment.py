@@ -33,7 +33,6 @@ def main():
     results_sparse_no_preproc = {}
     results_dense = {}
     results_hybrid = {}
-    results_hybrid_no_preproc = {}
     results_rerank = {}
 
     logger.info("Executing retrieval runs...")
@@ -85,6 +84,29 @@ def main():
     comparison_df.to_csv("experiment_results.csv", index=False, float_format="%.4f")
     logger.info("Experiment completed. Results saved to experiment_results.csv")
 
+    print("\n=== Query Latency Results (ms) ===")
+    latency_results = [
+        {
+            "Method": "BM25 (Preprocessed)",
+            "Avg Query Latency (ms)": sparse_retriever.get_avg_query_latency() * 1000,
+            "Num Queries": len(sparse_retriever.query_latencies)
+        },
+        {
+            "Method": "BM25 (No Preprocessing)",
+            "Avg Query Latency (ms)": sparse_retriever_no_preproc.get_avg_query_latency() * 1000,
+            "Num Queries": len(sparse_retriever_no_preproc.query_latencies)
+        },
+        {
+            "Method": "HNSW (Dense)",
+            "Avg Query Latency (ms)": dense_retriever.get_avg_query_latency() * 1000,
+            "Num Queries": len(dense_retriever.query_latencies)
+        }
+    ]
+    latency_df = pd.DataFrame(latency_results)
+    print(latency_df.to_string(index=False, float_format=lambda x: "{:.4f}".format(x)))
+    latency_df.to_csv("query_latency_results.csv", index=False, float_format="%.4f")
+    logger.info("Query latency results saved to query_latency_results.csv")
+
     logger.info("Calculating per-query metrics for significance testing...")
     pq_sparse = evaluator.get_per_query_metrics(results_sparse)
     pq_sparse_no_preproc = evaluator.get_per_query_metrics(results_sparse_no_preproc)
@@ -103,7 +125,6 @@ def main():
     sig_results = []
     
     for sys1, sys2, df1, df2, metrics in comparisons:
-        # Align dataframes on query_id index
         joined = df1.join(df2, lsuffix='_1', rsuffix='_2', how='inner')
         
         for metric in metrics:
